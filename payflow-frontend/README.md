@@ -1,13 +1,14 @@
 # PayFlow Frontend Web Application
 
-PayFlow v1.0 Client SPA built with React 18, Vite, TypeScript, Tailwind CSS, and TanStack Query.
+PayFlow v1.0 Client SPA built with React 19, Vite, TypeScript, Tailwind CSS, and TanStack Query.
 
-## 🚀 Prerequisites
+🚀 Prerequisites
 - Node.js 20 LTS
-- npm (v10+)
+- npm (v18+)
 
-## 🛠️ Quick Local Setup (≤ 15 minutes)
+🛠 Quick Local Setup (<= 15 minutes)
 
-### 1. Install Dependencies
+### 1. Environment Variables
+Copy the example environment file:
 ```bash
-npm install
+cp .env.example .env
