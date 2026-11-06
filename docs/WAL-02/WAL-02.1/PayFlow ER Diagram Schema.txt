@@ -1,0 +1,111 @@
+
+erDiagram
+    users o|--o| wallets : "owns (TREASURY has no user)"
+    wallets ||--o{ ledger_entries : "has"
+    transactions ||--|{ ledger_entries : "records (exactly 2 per SRS)"
+    users ||--o{ transactions : "initiates"
+    wallets ||--o{ transactions : "source_wallet"
+    wallets ||--o{ transactions : "destination_wallet"
+    users ||--o{ cashout_requests : "agent"
+    users ||--o{ cashout_requests : "customer"
+    transactions o|--o| cashout_requests : "linked_transaction"
+    users ||--o{ idempotency_keys : "owns"
+    users ||--o{ refresh_tokens : "has"
+    users o|--o{ audit_logs : "actor"
+
+    users {
+        BIGINT id PK
+        VARCHAR full_name
+        CHAR mobile UK
+        VARCHAR email UK
+        TEXT password_hash
+        user_role role
+        user_status status
+        BOOLEAN must_reset_pw
+        SMALLINT failed_logins
+        TIMESTAMPTZ locked_until
+        VARCHAR status_reason
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+    }
+
+    wallets {
+        BIGINT id PK
+        BIGINT user_id FK,UK
+        wallet_kind kind
+        NUMERIC balance
+        INTEGER version
+        TIMESTAMPTZ created_at
+    }
+
+    transactions {
+        BIGINT id PK
+        CHAR reference UK
+        txn_type type
+        txn_status status
+        NUMERIC amount
+        BIGINT from_wallet_id FK
+        BIGINT to_wallet_id FK
+        BIGINT initiated_by FK
+        VARCHAR note
+        VARCHAR failure_code
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ completed_at
+    }
+
+    ledger_entries {
+        BIGINT id PK
+        BIGINT transaction_id FK
+        BIGINT wallet_id FK
+        NUMERIC amount
+        NUMERIC balance_after
+        TIMESTAMPTZ created_at
+    }
+
+    cashout_requests {
+        BIGINT id PK
+        BIGINT agent_id FK
+        BIGINT customer_id FK
+        NUMERIC amount
+        co_status status
+        BIGINT transaction_id FK,UK
+        TIMESTAMPTZ expires_at
+        TIMESTAMPTZ decided_at
+        TIMESTAMPTZ created_at
+    }
+
+    idempotency_keys {
+        BIGINT user_id PK,FK
+        UUID key PK
+        CHAR request_hash
+        VARCHAR state
+        SMALLINT response_code
+        JSONB response_body
+        TIMESTAMPTZ created_at
+    }
+
+    refresh_tokens {
+        BIGINT id PK
+        BIGINT user_id FK
+        CHAR token_hash UK
+        TIMESTAMPTZ expires_at
+        TIMESTAMPTZ revoked_at
+    }
+
+    audit_logs {
+        BIGINT id PK
+        BIGINT actor_id FK
+        VARCHAR action
+        VARCHAR entity_type
+        BIGINT entity_id
+        JSONB before_data
+        JSONB after_data
+        INET ip_address
+        UUID request_id
+        TIMESTAMPTZ created_at
+    }
+
+    settings {
+        VARCHAR key PK
+        JSONB value
+    }
