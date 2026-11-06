@@ -1,0 +1,36 @@
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: payflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: payflow_db
+      POSTGRES_USER: payflow_admin
+      POSTGRES_PASSWORD: payflow_admin_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payflow_admin -d payflow_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    profiles: ["tools"]
+    volumes:
+      - ./migrations:/migrations
+    entrypoint: ["migrate"]
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://payflow_admin:payflow_admin_dev_password@postgres:5432/payflow_db?sslmode=disable"
+      - "up"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
