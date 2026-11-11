@@ -1,4 +1,4 @@
-import { Request } from 'express';
+import type { Request } from 'express';
 
 export function readCookie(request: Request, name: string): string | undefined {
   const header = request.headers.cookie;
