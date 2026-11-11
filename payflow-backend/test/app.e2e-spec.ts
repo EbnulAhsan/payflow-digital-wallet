@@ -3,14 +3,30 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { PrismaService } from './../src/prisma/prisma.service';
+
+process.env.JWT_ACCESS_SECRET = 'test-secret-with-at-least-thirty-two-bytes';
+process.env.NODE_ENV = 'test';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
+  const prisma = {
+    user: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+    refreshToken: {
+      create: jest.fn(),
+    },
+  };
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prisma)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     await app.init();
