@@ -40,6 +40,7 @@ describe('FR-AUTH-03 session refresh and logout', () => {
     status: 'ACTIVE' as const,
   };
   const refreshToken = 'a'.repeat(43);
+  const tokenFamilyId = 'c0a80101-0000-4000-8000-000000000001';
   const tx = {
     refreshToken: {
       findUnique: jest.fn(),
@@ -86,6 +87,7 @@ describe('FR-AUTH-03 session refresh and logout', () => {
     const current = {
       id: 1n,
       userId: activeUser.id,
+      familyId: tokenFamilyId,
       tokenHash: createHash('sha256').update(refreshToken).digest('hex'),
       expiresAt: new Date(Date.now() + 60_000),
       revokedAt: null,
@@ -113,6 +115,7 @@ describe('FR-AUTH-03 session refresh and logout', () => {
     expect(tx.refreshToken.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: activeUser.id,
+        familyId: tokenFamilyId,
         expiresAt: expect.any(Date),
       }),
     });
@@ -131,6 +134,72 @@ describe('FR-AUTH-03 session refresh and logout', () => {
       .post('/api/v1/auth/refresh')
       .set('Cookie', `refresh_token=${refreshToken}`)
       .expect(401);
+
+    expect(tx.refreshToken.updateMany).toHaveBeenLastCalledWith({
+      where: { familyId: tokenFamilyId, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+
+  it('returns 401 for an expired access token and renews the session with refresh', async () => {
+    const expiredAccessToken = await app.get(JwtService).signAsync(
+      { role: activeUser.role },
+      {
+        subject: activeUser.id.toString(),
+        expiresIn: -1,
+      },
+    );
+
+    await request(app.getHttpServer())
+      .get('/api/v1/_test/protected')
+      .set('Authorization', `Bearer ${expiredAccessToken}`)
+      .expect(401);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+
+    tx.refreshToken.findUnique.mockResolvedValue({
+      id: 2n,
+      userId: activeUser.id,
+      familyId: tokenFamilyId,
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: activeUser,
+    });
+    tx.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+    tx.refreshToken.create.mockResolvedValue({});
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', `refresh_token=${refreshToken}`)
+      .expect(200);
+
+    expect(response.body.expiresIn).toBe(900);
+    expect(response.body.accessToken).toBeDefined();
+    expect(tx.refreshToken.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: activeUser.id,
+        familyId: tokenFamilyId,
+        expiresAt: expect.any(Date),
+      }),
+    });
+  });
+
+  it('returns 401 for an expired refresh token without rotating it', async () => {
+    tx.refreshToken.findUnique.mockResolvedValue({
+      id: 3n,
+      userId: activeUser.id,
+      familyId: tokenFamilyId,
+      expiresAt: new Date(Date.now() - 1_000),
+      revokedAt: null,
+      user: activeUser,
+    });
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', `refresh_token=${refreshToken}`)
+      .expect(401);
+
+    expect(tx.refreshToken.updateMany).not.toHaveBeenCalled();
+    expect(tx.refreshToken.create).not.toHaveBeenCalled();
   });
 
   it('revokes the refresh token and clears its cookie at logout', async () => {
@@ -157,6 +226,7 @@ describe('FR-AUTH-03 session refresh and logout', () => {
     tx.refreshToken.findUnique.mockResolvedValue({
       id: 1n,
       userId: activeUser.id,
+      familyId: tokenFamilyId,
       expiresAt: new Date(Date.now() + 60_000),
       revokedAt: new Date(),
       user: activeUser,
@@ -171,6 +241,7 @@ describe('FR-AUTH-03 session refresh and logout', () => {
     tx.refreshToken.findUnique.mockResolvedValue({
       id: 1n,
       userId: activeUser.id,
+      familyId: tokenFamilyId,
       expiresAt: new Date(Date.now() + 60_000),
       revokedAt: null,
       user: { ...activeUser, status: 'INACTIVE' },
