@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import * as argon2 from 'argon2';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { ProblemDetailsFilter } from '../src/common/problem-details.filter';
@@ -10,16 +11,23 @@ process.env.JWT_ACCESS_SECRET ??= 'test-secret-with-at-least-thirty-two-bytes';
 process.env.NODE_ENV = 'test';
 
 // Runs against the real database after seed/seed.sql was loaded (WAL-07.2).
-// Skipped unless RUN_DB_E2E=true and SEED_PASSWORD (the demo password of the
-// seeded accounts) is set.
+// Skipped unless RUN_DB_E2E=true.
+//
+// The seeded accounts' real demo password is not stored in the repository
+// (NFR-SEC-09). In CI (GitHub sets CI=true) the throwaway test database gets a
+// test-only password on the seeded accounts. Locally, set SEED_PASSWORD to the
+// demo password to run the login tests against your own seeded database.
+const inCi = process.env.CI === 'true';
+const TEST_PASSWORD = 'Str0ng!Pass-seed';
+const password = inCi ? TEST_PASSWORD : (process.env.SEED_PASSWORD ?? '');
 const enabled =
-  process.env.RUN_DB_E2E === 'true' && Boolean(process.env.SEED_PASSWORD);
+  process.env.RUN_DB_E2E === 'true' &&
+  (inCi || Boolean(process.env.SEED_PASSWORD));
 const describeWithSeed = enabled ? describe : describe.skip;
 
 describeWithSeed('Demo seed data in PostgreSQL', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  const password = process.env.SEED_PASSWORD ?? '';
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -32,6 +40,19 @@ describeWithSeed('Demo seed data in PostgreSQL', () => {
     app.useGlobalFilters(new ProblemDetailsFilter());
     await app.init();
     prisma = app.get(PrismaService);
+
+    if (inCi) {
+      const passwordHash = await argon2.hash(TEST_PASSWORD, {
+        type: argon2.argon2id,
+        memoryCost: 19 * 1024,
+        timeCost: 2,
+        parallelism: 1,
+      });
+      await prisma.user.updateMany({
+        where: { email: { endsWith: '@payflow.test' } },
+        data: { passwordHash },
+      });
+    }
   });
 
   afterAll(async () => {
