@@ -98,6 +98,8 @@ jobs:
       JWT_ACCESS_SECRET: ci-only-secret-with-at-least-thirty-two-bytes
       CLIENT_URL: http://localhost:5173
       RUN_DB_E2E: 'true'
+      # Demo password of the seeded accounts (local demo data, not a real secret).
+      SEED_PASSWORD: PayFlowDemo!2026
     steps:
       - uses: actions/checkout@v4
 
@@ -120,5 +122,11 @@ jobs:
             echo "Applying $file"
             psql -h localhost -U payflow_admin -d payflow_db -v ON_ERROR_STOP=1 -f "$file"
           done
+
+      # Load the demo data (admin, agents, customers, merchants, ledger).
+      - name: Load demo seed
+        env:
+          PGPASSWORD: ci_admin_password
+        run: psql -h localhost -U payflow_admin -d payflow_db -v ON_ERROR_STOP=1 -f seed/seed.sql
 
       - run: npm run test:e2e -- --runInBand
