@@ -1,8 +1,10 @@
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
+import type { AuthResponse } from '../auth/types';
+import { useAuth } from '../auth/useAuth';
 import { api } from '../lib/api';
 import { loginSchema, type LoginFormValues } from '../schemas/auth';
 
@@ -34,7 +36,8 @@ function loginErrorMessage(error: unknown): string {
 }
 
 export default function Login() {
-  const navigate = useNavigate();
+  const { status, startSession } = useAuth();
+  const location = useLocation();
 
   const {
     register,
@@ -47,14 +50,20 @@ export default function Login() {
 
   const login = useMutation({
     mutationFn: async (values: LoginFormValues) => {
-      const { data } = await api.post('/auth/login', values);
+      const { data } = await api.post<AuthResponse>('/auth/login', values);
       return data;
     },
-    onSuccess: () => {
-      // TODO: keep the access token once the auth state is added.
-      navigate('/dashboard');
-    },
+    // Keeps the token in memory; the redirect below then takes the user in.
+    onSuccess: startSession,
   });
+
+  // Signed in (also when someone opens /login while already signed in):
+  // go back to the page that sent them here, or to the dashboard.
+  if (status === 'authenticated') {
+    const from = (location.state as { from?: { pathname: string } } | null)
+      ?.from?.pathname;
+    return <Navigate to={from ?? '/dashboard'} replace />;
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
