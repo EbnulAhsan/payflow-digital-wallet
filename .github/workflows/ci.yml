@@ -60,6 +60,10 @@ jobs:
 
       - run: npm run format:check
 
+      # Frontend unit tests (Vitest). --if-present skips the step on branches
+      # that have no test script yet.
+      - run: npm test --if-present
+
       # tsc -b type-checks the app, then Vite builds it.
       - run: npm run build
         env:
