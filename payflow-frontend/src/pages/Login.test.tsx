@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { AxiosError, type AxiosResponse } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthContext, type AuthContextValue } from '../auth/authContext';
 import { api } from '../lib/api';
 import Login from './Login';
 
@@ -11,15 +12,25 @@ vi.mock('../lib/api', () => ({ api: { post: vi.fn() } }));
 
 const post = vi.mocked(api.post);
 
+const startSession = vi.fn();
+
 function renderLogin() {
+  const auth: AuthContextValue = {
+    user: null,
+    status: 'unauthenticated',
+    startSession,
+    logout: vi.fn(),
+  };
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <Login />
-      </MemoryRouter>
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter>
+          <Login />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </QueryClientProvider>,
   );
 }
@@ -45,6 +56,7 @@ async function fillAndSubmit(identifier: string, password: string) {
 describe('Login form (FR-AUTH-02)', () => {
   beforeEach(() => {
     post.mockReset();
+    startSession.mockReset();
   });
 
   it('shows required-field errors and does not call the API', async () => {
@@ -70,8 +82,9 @@ describe('Login form (FR-AUTH-02)', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('sends the credentials to /auth/login', async () => {
-    post.mockResolvedValue({ data: { accessToken: 'token' } });
+  it('sends the credentials to /auth/login and starts the session', async () => {
+    const response = { accessToken: 'token', user: { role: 'CUSTOMER' } };
+    post.mockResolvedValue({ data: response });
     renderLogin();
     await fillAndSubmit('01711000001', 'Str0ng!Pass');
 
@@ -81,6 +94,9 @@ describe('Login form (FR-AUTH-02)', () => {
         password: 'Str0ng!Pass',
       }),
     );
+    // TanStack Query passes extra arguments, so only the first one is checked.
+    await waitFor(() => expect(startSession).toHaveBeenCalled());
+    expect(startSession.mock.calls[0][0]).toEqual(response);
   });
 
   it.each([
