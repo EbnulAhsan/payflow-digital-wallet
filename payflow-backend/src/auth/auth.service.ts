@@ -157,20 +157,7 @@ export class AuthService implements OnModuleInit {
       throw this.problem(403, 'ACCOUNT_NOT_ACTIVE', 'Account not active');
     }
 
-    const jwtSecret = this.configService.get<string>('JWT_ACCESS_SECRET');
-    if (!jwtSecret || Buffer.byteLength(jwtSecret, 'utf8') < 32) {
-      throw new Error('JWT_ACCESS_SECRET must contain at least 32 bytes');
-    }
-
-    const accessToken = await this.jwtService.signAsync(
-      { role: user.role },
-      {
-        algorithm: 'HS256',
-        expiresIn: '15m',
-        secret: jwtSecret,
-        subject: user.id.toString(),
-      },
-    );
+    const accessToken = await this.createAccessToken(user.id, user.role);
     const refreshToken = randomBytes(32).toString('base64url');
     const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
     const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
@@ -199,6 +186,122 @@ export class AuthService implements OnModuleInit {
       refreshToken,
       refreshExpiresAt,
     };
+  }
+
+  async refresh(refreshToken: string | undefined): Promise<LoginResult> {
+    if (!refreshToken || !/^[A-Za-z0-9_-]{43}$/.test(refreshToken)) {
+      throw this.problem(401, 'INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+    }
+
+    const now = new Date();
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+    const rotated = await this.prisma.$transaction(async (transaction) => {
+      const current = await transaction.refreshToken.findUnique({
+        where: { tokenHash },
+        include: { user: true },
+      });
+
+      if (!current || current.revokedAt || current.expiresAt <= now) {
+        return null;
+      }
+
+      if (current.user.status !== UserStatus.ACTIVE) {
+        await transaction.refreshToken.updateMany({
+          where: { userId: current.userId, revokedAt: null },
+          data: { revokedAt: now },
+        });
+        return null;
+      }
+
+      const revoked = await transaction.refreshToken.updateMany({
+        where: {
+          id: current.id,
+          revokedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: { revokedAt: now },
+      });
+
+      if (revoked.count !== 1) {
+        return null;
+      }
+
+      const nextRefreshToken = randomBytes(32).toString('base64url');
+      const refreshExpiresAt = new Date(now.getTime() + REFRESH_TOKEN_TTL_MS);
+      const nextTokenHash = createHash('sha256')
+        .update(nextRefreshToken)
+        .digest('hex');
+
+      await transaction.refreshToken.create({
+        data: {
+          userId: current.userId,
+          tokenHash: nextTokenHash,
+          expiresAt: refreshExpiresAt,
+        },
+      });
+
+      return {
+        user: current.user,
+        refreshToken: nextRefreshToken,
+        refreshExpiresAt,
+      };
+    });
+
+    if (!rotated) {
+      throw this.problem(401, 'INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+    }
+
+    return {
+      response: {
+        accessToken: await this.createAccessToken(
+          rotated.user.id,
+          rotated.user.role,
+        ),
+        tokenType: 'Bearer',
+        expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+        user: {
+          id: rotated.user.id.toString(),
+          fullName: rotated.user.fullName,
+          mobile: rotated.user.mobile,
+          email: rotated.user.email,
+          role: rotated.user.role,
+        },
+      },
+      refreshToken: rotated.refreshToken,
+      refreshExpiresAt: rotated.refreshExpiresAt,
+    };
+  }
+
+  async logout(refreshToken: string | undefined): Promise<void> {
+    if (!refreshToken || !/^[A-Za-z0-9_-]{43}$/.test(refreshToken)) {
+      return;
+    }
+
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+    await this.prisma.refreshToken.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  private async createAccessToken(
+    userId: bigint,
+    role: UserRole,
+  ): Promise<string> {
+    const jwtSecret = this.configService.get<string>('JWT_ACCESS_SECRET');
+    if (!jwtSecret || Buffer.byteLength(jwtSecret, 'utf8') < 32) {
+      throw new Error('JWT_ACCESS_SECRET must contain at least 32 bytes');
+    }
+
+    return this.jwtService.signAsync(
+      { role },
+      {
+        algorithm: 'HS256',
+        expiresIn: '15m',
+        secret: jwtSecret,
+        subject: userId.toString(),
+      },
+    );
   }
 
   private problem(status: number, code: string, detail: string): HttpException {
