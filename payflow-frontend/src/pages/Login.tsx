@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import type { AuthResponse } from '../auth/types';
+import { canAccess, HOME_PATH } from '../auth/roleAccess';
 import { useAuth } from '../auth/useAuth';
 import { api } from '../lib/api';
 import { loginSchema, type LoginFormValues } from '../schemas/auth';
@@ -36,7 +37,7 @@ function loginErrorMessage(error: unknown): string {
 }
 
 export default function Login() {
-  const { status, startSession } = useAuth();
+  const { user, status, startSession } = useAuth();
   const location = useLocation();
 
   const {
@@ -58,11 +59,14 @@ export default function Login() {
   });
 
   // Signed in (also when someone opens /login while already signed in):
-  // go back to the page that sent them here, or to the dashboard.
-  if (status === 'authenticated') {
+  // go back to the page that sent them here if their role may open it,
+  // otherwise to the home screen of their role.
+  if (status === 'authenticated' && user) {
     const from = (location.state as { from?: { pathname: string } } | null)
       ?.from?.pathname;
-    return <Navigate to={from ?? '/dashboard'} replace />;
+    const target =
+      from && canAccess(user.role, from) ? from : HOME_PATH[user.role];
+    return <Navigate to={target} replace />;
   }
 
   return (
