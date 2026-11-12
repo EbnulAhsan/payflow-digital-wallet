@@ -1,5 +1,7 @@
 # PayFlow Backend Service
 
+[![CI](https://github.com/EbnulAhsan/payflow-digital-wallet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/EbnulAhsan/payflow-digital-wallet/actions/workflows/ci.yml)
+
 PayFlow v1.0 REST API service built with NestJS 10, TypeScript, and PostgreSQL 16.
 
 ## Prerequisites
