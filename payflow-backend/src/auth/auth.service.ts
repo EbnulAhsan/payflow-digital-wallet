@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, UserRole, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './login.dto';
 import { RegisterDto } from './register.dto';
@@ -165,6 +165,7 @@ export class AuthService implements OnModuleInit {
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
+        familyId: randomUUID(),
         tokenHash,
         expiresAt: refreshExpiresAt,
       },
@@ -201,7 +202,19 @@ export class AuthService implements OnModuleInit {
         include: { user: true },
       });
 
-      if (!current || current.revokedAt || current.expiresAt <= now) {
+      if (!current) {
+        return null;
+      }
+
+      if (current.revokedAt) {
+        await transaction.refreshToken.updateMany({
+          where: { familyId: current.familyId, revokedAt: null },
+          data: { revokedAt: now },
+        });
+        return null;
+      }
+
+      if (current.expiresAt <= now) {
         return null;
       }
 
@@ -223,6 +236,10 @@ export class AuthService implements OnModuleInit {
       });
 
       if (revoked.count !== 1) {
+        await transaction.refreshToken.updateMany({
+          where: { familyId: current.familyId, revokedAt: null },
+          data: { revokedAt: now },
+        });
         return null;
       }
 
@@ -235,6 +252,7 @@ export class AuthService implements OnModuleInit {
       await transaction.refreshToken.create({
         data: {
           userId: current.userId,
+          familyId: current.familyId,
           tokenHash: nextTokenHash,
           expiresAt: refreshExpiresAt,
         },

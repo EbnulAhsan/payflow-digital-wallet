@@ -101,8 +101,21 @@ Run the authentication tests with:
 npm run test:auth
 ```
 
-`FR-AUTH-03` refresh/logout flows and `FR-AUTH-06` failed-login account
-lockout are outside WAL-06.1.
+### Refresh and token expiry
+
+Access tokens use HS256, expire after 15 minutes, and require a
+`JWT_ACCESS_SECRET` of at least 32 bytes. Expired access tokens receive HTTP
+401; clients can call `POST /api/v1/auth/refresh` to rotate the seven-day
+refresh token and obtain a new access token.
+
+Refresh tokens are stored only as SHA-256 hashes and sent only in an
+`HttpOnly`, `Secure`, `SameSite=Strict` cookie. Reusing a rotated refresh token
+revokes every active token in that session family. Missing, expired, revoked,
+or inactive-account refresh tokens receive HTTP 401. `POST /api/v1/auth/logout`
+revokes the presented refresh token and clears the cookie.
+
+Migration `003_refresh_token_families` adds the session-family identifier to
+existing refresh-token rows.
 
 ## Database seed
 
