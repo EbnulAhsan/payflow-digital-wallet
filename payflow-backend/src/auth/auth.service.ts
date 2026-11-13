@@ -10,6 +10,8 @@ import { RegisterDto } from './register.dto';
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_FAILURE_LIMIT = 5;
 const ARGON2_OPTIONS: argon2.Options & { type: number } = {
   type: argon2.argon2id,
   memoryCost: 19 * 1024,
@@ -43,6 +45,10 @@ export interface RegisterResponse {
   email: string;
   role: UserRole;
   status: UserStatus;
+}
+
+interface LoginAttemptState {
+  lockedUntil: Date | null;
 }
 
 @Injectable()
@@ -138,6 +144,11 @@ export class AuthService implements OnModuleInit {
       ? { email: identifier.toLowerCase() }
       : { mobile: identifier };
     const user = await this.prisma.user.findUnique({ where });
+    const now = new Date();
+    if (user?.lockedUntil && user.lockedUntil > now) {
+      throw this.temporarilyLocked(user.lockedUntil, now);
+    }
+
     const passwordHash = user?.passwordHash ?? this.dummyPasswordHash;
 
     if (!passwordHash) {
@@ -150,12 +161,17 @@ export class AuthService implements OnModuleInit {
     );
 
     if (!user || !passwordMatches) {
+      if (user) {
+        await this.recordFailedLogin(user.id, now);
+      }
       throw this.problem(401, 'INVALID_CREDENTIALS', 'Invalid credentials');
     }
 
     if (user.status !== UserStatus.ACTIVE) {
       throw this.problem(403, 'ACCOUNT_NOT_ACTIVE', 'Account not active');
     }
+
+    await this.clearFailedLogins(user.id, now);
 
     const accessToken = await this.createAccessToken(user.id, user.role);
     const refreshToken = randomBytes(32).toString('base64url');
@@ -187,6 +203,99 @@ export class AuthService implements OnModuleInit {
       refreshToken,
       refreshExpiresAt,
     };
+  }
+
+  private async recordFailedLogin(userId: bigint, now: Date): Promise<void> {
+    const windowStartedAt = new Date(now.getTime() - LOGIN_FAILURE_WINDOW_MS);
+    const existingLock = await this.prisma.$transaction(async (transaction) => {
+      const [state] = await transaction.$queryRaw<LoginAttemptState[]>`
+        SELECT locked_until AS "lockedUntil"
+        FROM users
+        WHERE id = ${userId}
+        FOR UPDATE
+      `;
+
+      if (!state) {
+        throw new Error('Unable to load login state for user');
+      }
+
+      if (state.lockedUntil && state.lockedUntil > now) {
+        return state.lockedUntil;
+      }
+
+      await transaction.loginFailure.deleteMany({
+        where: { userId, failedAt: { lte: windowStartedAt } },
+      });
+      await transaction.loginFailure.create({
+        data: { userId, failedAt: now },
+      });
+      const failedLogins = await transaction.loginFailure.count({
+        where: {
+          userId,
+          failedAt: { gt: windowStartedAt, lte: now },
+        },
+      });
+      const lockedUntil =
+        failedLogins >= LOGIN_FAILURE_LIMIT
+          ? new Date(now.getTime() + LOGIN_FAILURE_WINDOW_MS)
+          : null;
+
+      await transaction.user.update({
+        where: { id: userId },
+        data: { failedLogins, lockedUntil },
+      });
+
+      return null;
+    });
+
+    if (existingLock) {
+      throw this.temporarilyLocked(existingLock, now);
+    }
+  }
+
+  private async clearFailedLogins(userId: bigint, now: Date): Promise<void> {
+    const existingLock = await this.prisma.$transaction(async (transaction) => {
+      const [state] = await transaction.$queryRaw<LoginAttemptState[]>`
+        SELECT locked_until AS "lockedUntil"
+        FROM users
+        WHERE id = ${userId}
+        FOR UPDATE
+      `;
+
+      if (!state) {
+        throw new Error('Unable to load login state for user');
+      }
+
+      if (state.lockedUntil && state.lockedUntil > now) {
+        return state.lockedUntil;
+      }
+
+      await transaction.loginFailure.deleteMany({ where: { userId } });
+      await transaction.user.update({
+        where: { id: userId },
+        data: { failedLogins: 0, lockedUntil: null },
+      });
+
+      return null;
+    });
+
+    if (existingLock) {
+      throw this.temporarilyLocked(existingLock, now);
+    }
+  }
+
+  private temporarilyLocked(lockedUntil: Date, now: Date): HttpException {
+    return this.problem(
+      429,
+      'TEMPORARILY_LOCKED',
+      'Account temporarily locked',
+      {
+        retryAfterSeconds: Math.max(
+          1,
+          Math.ceil((lockedUntil.getTime() - now.getTime()) / 1000),
+        ),
+      },
+    );
   }
 
   async refresh(refreshToken: string | undefined): Promise<LoginResult> {
@@ -322,12 +431,18 @@ export class AuthService implements OnModuleInit {
     );
   }
 
-  private problem(status: number, code: string, detail: string): HttpException {
+  private problem(
+    status: number,
+    code: string,
+    detail: string,
+    extra: Record<string, unknown> = {},
+  ): HttpException {
     return new HttpException(
       {
         code,
         title: detail,
         detail,
+        ...extra,
       },
       status,
     );

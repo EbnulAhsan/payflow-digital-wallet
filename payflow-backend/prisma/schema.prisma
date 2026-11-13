@@ -40,8 +40,19 @@ model User {
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
   refreshTokens RefreshToken[]
+  loginFailures LoginFailure[]
 
   @@map("users")
+}
+
+model LoginFailure {
+  id       BigInt   @id @default(autoincrement())
+  userId   BigInt   @map("user_id")
+  failedAt DateTime @default(now()) @map("failed_at") @db.Timestamptz(6)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, failedAt])
+  @@map("login_failures")
 }
 
 model RefreshToken {
