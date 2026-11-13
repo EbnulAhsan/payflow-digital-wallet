@@ -16,24 +16,32 @@ export const HOME_PATH: Record<Role, string> = {
   ADMIN: '/admin',
 };
 
+// SRS 5.4 role home screens:
+//   Customer: balance, send, pay, pending cash-outs, history
+//   Agent:    float, cash-in, cash-out requests, history
+//   Merchant: payments received, verify reference
+//   Admin:    users, agents, allocations, transactions, audit, dashboard
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Home', path: '/dashboard', roles: ['CUSTOMER'] },
   { label: 'Send', path: '/send', roles: ['CUSTOMER'] },
   { label: 'Pay', path: '/pay', roles: ['CUSTOMER'] },
+  { label: 'Pending cash-outs', path: '/cash-outs', roles: ['CUSTOMER'] },
 
-  { label: 'Home', path: '/agent', roles: ['AGENT'] },
+  { label: 'Float', path: '/agent', roles: ['AGENT'] },
   { label: 'Cash-in', path: '/agent/cash-in', roles: ['AGENT'] },
-  { label: 'Cash-out', path: '/agent/cash-out', roles: ['AGENT'] },
+  { label: 'Cash-out requests', path: '/agent/cash-out', roles: ['AGENT'] },
 
-  { label: 'Home', path: '/merchant', roles: ['MERCHANT'] },
-  { label: 'Verify', path: '/merchant/verify', roles: ['MERCHANT'] },
+  { label: 'Payments received', path: '/merchant', roles: ['MERCHANT'] },
+  { label: 'Verify reference', path: '/merchant/verify', roles: ['MERCHANT'] },
 
-  { label: 'Home', path: '/admin', roles: ['ADMIN'] },
+  { label: 'Dashboard', path: '/admin', roles: ['ADMIN'] },
   { label: 'Users', path: '/admin/users', roles: ['ADMIN'] },
+  { label: 'Agents', path: '/admin/agents', roles: ['ADMIN'] },
   { label: 'Allocations', path: '/admin/allocations', roles: ['ADMIN'] },
   { label: 'Transactions', path: '/admin/transactions', roles: ['ADMIN'] },
   { label: 'Audit', path: '/admin/audit', roles: ['ADMIN'] },
 
+  // FR-HIS-01: customers, agents and merchants see their own history.
   {
     label: 'History',
     path: '/history',
