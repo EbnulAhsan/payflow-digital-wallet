@@ -1,15 +1,69 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation } from '@tanstack/react-query';
+import { isAxiosError } from 'axios';
+import type { AuthResponse } from '../auth/types';
+import { useAuth } from '../auth/useAuth';
+import { api } from '../lib/api';
+import { loginSchema, type LoginFormValues } from '../schemas/auth';
+
+const inputClass =
+  'w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 transition-colors focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600';
+const labelClass =
+  'block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-2';
+
+// SRS FR-AUTH-02: unknown mobile and wrong password both return 401
+// "Invalid credentials", so the UI shows one message for every login failure.
+function loginErrorMessage(error: unknown): string {
+  if (isAxiosError(error)) {
+    const status = error.response?.status;
+    const code = error.response?.data?.code;
+    if (status === 403 && code === 'ACCOUNT_NOT_ACTIVE') {
+      return 'Your account is not active yet. Please contact an administrator.';
+    }
+    if (status === 429) {
+      return 'Too many failed attempts. Please try again later.';
+    }
+    if (status === 401) {
+      return 'Invalid credentials';
+    }
+    if (!error.response) {
+      return 'Cannot reach the server. Please try again.';
+    }
+  }
+  return 'Something went wrong. Please try again.';
+}
 
 export default function Login() {
-  const [mobileOrEmail, setMobileOrEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const navigate = useNavigate();
+  const { status, startSession } = useAuth();
+  const location = useLocation();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    navigate('/dashboard');
-  };
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { identifier: '', password: '' },
+  });
+
+  const login = useMutation({
+    mutationFn: async (values: LoginFormValues) => {
+      const { data } = await api.post<AuthResponse>('/auth/login', values);
+      return data;
+    },
+    // Keeps the token in memory; the redirect below then takes the user in.
+    onSuccess: startSession,
+  });
+
+  // Signed in (also when someone opens /login while already signed in):
+  // go back to the page that sent them here, or to the dashboard.
+  if (status === 'authenticated') {
+    const from = (location.state as { from?: { pathname: string } } | null)
+      ?.from?.pathname;
+    return <Navigate to={from ?? '/dashboard'} replace />;
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
@@ -26,40 +80,84 @@ export default function Login() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form
+          onSubmit={(event) => {
+            // Clear the previous server error on every new submit, so it
+            // never shows next to fresh field validation errors.
+            login.reset();
+            void handleSubmit((values) => login.mutate(values))(event);
+          }}
+          noValidate
+          className="space-y-5"
+        >
+          {login.isError && (
+            <div
+              role="alert"
+              data-testid="login-error"
+              className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+            >
+              {loginErrorMessage(login.error)}
+            </div>
+          )}
+
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-2">
+            <label htmlFor="identifier" className={labelClass}>
               Mobile or Email
             </label>
             <input
+              id="identifier"
               type="text"
-              required
+              autoComplete="username"
               placeholder="01711000001 or user@example.com"
-              value={mobileOrEmail}
-              onChange={(e) => setMobileOrEmail(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 transition-colors focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+              aria-invalid={errors.identifier ? 'true' : 'false'}
+              aria-describedby={
+                errors.identifier ? 'identifier-error' : undefined
+              }
+              className={inputClass}
+              {...register('identifier')}
             />
+            {errors.identifier && (
+              <p
+                id="identifier-error"
+                data-testid="identifier-error"
+                className="mt-1 text-xs text-rose-600"
+              >
+                {errors.identifier.message}
+              </p>
+            )}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-2">
+            <label htmlFor="password" className={labelClass}>
               Password
             </label>
             <input
+              id="password"
               type="password"
-              required
+              autoComplete="current-password"
               placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 transition-colors focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+              aria-invalid={errors.password ? 'true' : 'false'}
+              aria-describedby={errors.password ? 'password-error' : undefined}
+              className={inputClass}
+              {...register('password')}
             />
+            {errors.password && (
+              <p
+                id="password-error"
+                data-testid="password-error"
+                className="mt-1 text-xs text-rose-600"
+              >
+                {errors.password.message}
+              </p>
+            )}
           </div>
 
           <button
             type="submit"
-            className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:bg-indigo-700 focus:outline-none"
+            disabled={login.isPending}
+            className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:bg-indigo-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Sign In
+            {login.isPending ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
 

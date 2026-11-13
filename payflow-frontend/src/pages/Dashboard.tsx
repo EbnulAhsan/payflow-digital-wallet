@@ -1,7 +1,7 @@
-import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/useAuth';
 
 export default function Dashboard() {
-  const navigate = useNavigate();
+  const { logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -20,7 +20,7 @@ export default function Dashboard() {
               ● Active Customer
             </span>
             <button
-              onClick={() => navigate('/login')}
+              onClick={() => void logout()}
               className="text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-all"
             >
               Sign Out

@@ -9,6 +9,12 @@ import { createValidationPipe } from './common/validation.pipe';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   app.use(helmet());
+  // The frontend runs on another origin and reads the refresh cookie, so CORS
+  // must name that origin and allow credentials.
+  app.enableCors({
+    origin: process.env.CLIENT_URL ?? 'http://localhost:5173',
+    credentials: true,
+  });
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(createValidationPipe());
   app.useGlobalFilters(new ProblemDetailsFilter());
