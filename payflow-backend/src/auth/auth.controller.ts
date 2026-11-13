@@ -57,7 +57,10 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials.' })
   @ApiResponse({ status: 403, description: 'Account is not active.' })
-  @ApiResponse({ status: 429, description: 'Login rate limit exceeded.' })
+  @ApiResponse({
+    status: 429,
+    description: 'Login rate limit exceeded or account temporarily locked.',
+  })
   async login(
     @Body() credentials: LoginDto,
     @Res({ passthrough: true }) response: Response,
