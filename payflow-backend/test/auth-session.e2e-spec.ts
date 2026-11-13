@@ -11,6 +11,7 @@ import type { Request } from 'express';
 import { createHash } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { Roles } from '../src/auth/roles.decorator';
 import { ProblemDetailsFilter } from '../src/common/problem-details.filter';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -20,12 +21,33 @@ process.env.NODE_ENV = 'test';
 @Controller('_test')
 class ProtectedProbeController {
   @Get('protected')
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.AGENT,
+    UserRole.CUSTOMER,
+    UserRole.MERCHANT,
+  )
   getSession(
     @Req() request: Request & {
       authUser?: { id: string; role: UserRole };
     },
   ): { id: string; role: UserRole } | undefined {
     return request.authUser;
+  }
+
+  @Get('admin')
+  @Roles(UserRole.ADMIN)
+  getAdminSession(
+    @Req() request: Request & {
+      authUser?: { id: string; role: UserRole };
+    },
+  ): { id: string; role: UserRole } | undefined {
+    return request.authUser;
+  }
+
+  @Get('unconfigured')
+  getUnconfiguredSession(): string {
+    return 'unreachable';
   }
 }
 
@@ -292,5 +314,70 @@ describe('FR-AUTH-03 session refresh and logout', () => {
       .expect(401);
 
     expect(response.body.code).toBe('ACCOUNT_NOT_ACTIVE');
+  });
+
+  it('returns 401 for a protected route without an access token', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/_test/admin')
+      .expect(401);
+
+    expect(response.body.code).toBe('UNAUTHENTICATED');
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    UserRole.AGENT,
+    UserRole.CUSTOMER,
+    UserRole.MERCHANT,
+  ])('returns 403 when %s calls an admin-only route', async (role) => {
+    const accessToken = await app.get(JwtService).signAsync(
+      { role },
+      { subject: activeUser.id.toString() },
+    );
+    prisma.user.findUnique.mockResolvedValue({
+      id: activeUser.id,
+      role,
+      status: 'ACTIVE',
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/_test/admin')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(403);
+
+    expect(response.body.code).toBe('INSUFFICIENT_ROLE');
+  });
+
+  it('allows an authorized role and fails closed without a role policy', async () => {
+    const accessToken = await app.get(JwtService).signAsync(
+      { role: UserRole.ADMIN },
+      { subject: activeUser.id.toString() },
+    );
+    prisma.user.findUnique
+      .mockResolvedValueOnce({
+        id: activeUser.id,
+        role: UserRole.ADMIN,
+        status: 'ACTIVE',
+      })
+      .mockResolvedValueOnce({
+        id: activeUser.id,
+        role: UserRole.ADMIN,
+        status: 'ACTIVE',
+      });
+
+    const allowed = await request(app.getHttpServer())
+      .get('/api/v1/_test/admin')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect(allowed.body).toEqual({
+      id: activeUser.id.toString(),
+      role: UserRole.ADMIN,
+    });
+
+    const unconfigured = await request(app.getHttpServer())
+      .get('/api/v1/_test/unconfigured')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(403);
+    expect(unconfigured.body.code).toBe('ROLE_POLICY_NOT_DEFINED');
   });
 });
