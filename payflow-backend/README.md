@@ -92,8 +92,12 @@ minutes. The seven-day refresh token is returned only as an `HttpOnly`,
 Unknown accounts and incorrect passwords both return HTTP 401 with code
 `INVALID_CREDENTIALS` and detail `Invalid credentials`. Correct credentials
 for an inactive account return HTTP 403 with code `ACCOUNT_NOT_ACTIVE`.
-Login is limited to 10 attempts per minute per IP. Errors use RFC 9457-style
-problem details and carry an `X-Request-Id`.
+Five failed password checks in a rolling 15-minute window lock the account for
+15 minutes. The next login attempt returns HTTP 429 with code
+`TEMPORARILY_LOCKED` and a `Retry-After` header, even with the correct
+password. A successful login clears the failed-login history. Login is also
+limited to 10 attempts per minute per IP. Errors use RFC 9457-style problem
+details and carry an `X-Request-Id`.
 
 Run the authentication tests with:
 
@@ -115,7 +119,8 @@ or inactive-account refresh tokens receive HTTP 401. `POST /api/v1/auth/logout`
 revokes the presented refresh token and clears the cookie.
 
 Migration `003_refresh_token_families` adds the session-family identifier to
-existing refresh-token rows.
+existing refresh-token rows. Migration `004_failed_login_lockout` stores the
+timestamps used to enforce the rolling failed-login window.
 
 ## Database seed
 
