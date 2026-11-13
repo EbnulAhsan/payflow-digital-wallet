@@ -15,6 +15,17 @@ process.env.NODE_ENV = 'test';
 describe('POST /api/v1/auth/login', () => {
   let app: INestApplication;
   let passwordHash: string;
+  const transaction = {
+    loginFailure: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      create: jest.fn().mockResolvedValue({}),
+      count: jest.fn().mockResolvedValue(1),
+    },
+    user: {
+      update: jest.fn().mockResolvedValue({}),
+    },
+    $queryRaw: jest.fn().mockResolvedValue([{ lockedUntil: null }]),
+  };
   const prisma = {
     user: {
       findUnique: jest.fn(),
@@ -23,6 +34,10 @@ describe('POST /api/v1/auth/login', () => {
     refreshToken: {
       create: jest.fn(),
     },
+    $transaction: jest.fn(
+      (operation: (tx: typeof transaction) => Promise<unknown>) =>
+        operation(transaction),
+    ),
   };
   const activeUser = {
     id: 42n,
