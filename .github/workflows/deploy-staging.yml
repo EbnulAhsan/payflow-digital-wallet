@@ -1,0 +1,96 @@
+name: Deploy to staging
+
+# NFR-OPS-01: main deploys to staging automatically in <= 15 minutes.
+# It runs only after the CI workflow has passed on a push to main, so a red
+# build is never deployed.
+#
+# One-time setup (Settings > Environments > staging):
+#   secrets:   STAGING_HOST, STAGING_USER, STAGING_SSH_KEY, STAGING_KNOWN_HOSTS
+#   variables: STAGING_URL (for example https://staging.example.com)
+# On the server: Docker with Compose, and /opt/payflow/staging.env holding
+#   POSTGRES_ADMIN_PASSWORD, JWT_ACCESS_SECRET (>= 32 bytes), CLIENT_URL
+# Until the secrets exist the job reports "not configured" and does nothing.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deployments run one at a time and are never cancelled half way.
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy main to staging
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      REMOTE_DIR: /opt/payflow/app
+      REMOTE_ENV: /opt/payflow/staging.env
+    steps:
+      - name: Check staging is configured
+        id: config
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          if [ -z "$STAGING_HOST" ] || [ -z "$STAGING_SSH_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Staging is not configured (STAGING_HOST / STAGING_SSH_KEY missing). Nothing was deployed."
+            echo "### Staging deploy skipped: secrets not configured" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.configured == 'true'
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
+      - name: Set up SSH
+        if: steps.config.outputs.configured == 'true'
+        env:
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          STAGING_KNOWN_HOSTS: ${{ secrets.STAGING_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          # The server's host key is pinned; without it the deploy refuses to run.
+          test -n "$STAGING_KNOWN_HOSTS"
+          printf '%s\n' "$STAGING_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Copy the commit to the server and start the stack
+        if: steps.config.outputs.configured == 'true'
+        env:
+          TARGET: ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }}
+        run: |
+          SSH="ssh -i $HOME/.ssh/staging_key -o StrictHostKeyChecking=yes"
+          git archive "$DEPLOY_SHA" | $SSH "$TARGET" \
+            "rm -rf '$REMOTE_DIR' && mkdir -p '$REMOTE_DIR' && tar -x -C '$REMOTE_DIR'"
+          $SSH "$TARGET" "cd '$REMOTE_DIR' && \
+            docker compose -f docker-compose.staging.yml --env-file '$REMOTE_ENV' up -d --build --remove-orphans"
+
+      - name: Wait for the API
+        if: steps.config.outputs.configured == 'true'
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
+        run: |
+          test -n "$STAGING_URL"
+          # /api/docs is public and only answers once the API has started.
+          curl --fail --silent --show-error \
+            --retry 30 --retry-delay 10 --retry-all-errors \
+            "$STAGING_URL/api/docs" > /dev/null
+          echo "### Deployed $DEPLOY_SHA to $STAGING_URL" >> "$GITHUB_STEP_SUMMARY"

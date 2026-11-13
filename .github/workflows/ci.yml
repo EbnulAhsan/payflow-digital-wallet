@@ -37,7 +37,9 @@ jobs:
 
       - run: npm run lint
 
-      - run: npm test
+      # NFR-OPS-03 coverage gate: unit tests with the thresholds in
+      # jest.config.ts (>= 60% overall, >= 80% on the transaction engine).
+      - run: npm run test:cov
 
   frontend:
     name: Frontend lint, format and build
