@@ -95,7 +95,13 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
 
     if (status === 429) {
-      response.setHeader('Retry-After', '60');
+      const retryAfterSeconds =
+        typeof body.retryAfterSeconds === 'number' &&
+        Number.isFinite(body.retryAfterSeconds) &&
+        body.retryAfterSeconds > 0
+          ? Math.ceil(body.retryAfterSeconds)
+          : 60;
+      response.setHeader('Retry-After', String(retryAfterSeconds));
     }
 
     const problem: ProblemResponse = {
