@@ -1,34 +1,6 @@
-import { useAuth } from '../auth/useAuth';
-
 export default function Dashboard() {
-  const { logout } = useAuth();
-
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Top Navbar */}
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="h-9 w-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm">
-              PF
-            </div>
-            <span className="font-bold text-slate-900 text-lg">PayFlow</span>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <span className="text-xs bg-emerald-50 text-emerald-700 font-semibold px-2.5 py-1 rounded-full border border-emerald-200">
-              ● Active Customer
-            </span>
-            <button
-              onClick={() => void logout()}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-all"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
-
+    <>
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6">
         {/* Wallet Overview Card */}
@@ -136,6 +108,6 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
-    </div>
+    </>
   );
 }
