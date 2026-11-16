@@ -6,3 +6,5 @@ export class AppService {
     return 'Hello World!';
   }
 }
+
+const unusedVariable = 1;  // for checking of wal-7
