@@ -1,0 +1,111 @@
+name: E2E Smoke (Playwright)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: payflow_db
+          POSTGRES_USER: payflow_admin
+          POSTGRES_PASSWORD: ci_admin_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U payflow_admin -d payflow_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGPASSWORD: ci_admin_password
+      # Throwaway test account on a throwaway CI database only
+      E2E_USER_ID: '01710000101'
+      E2E_USER_PASSWORD: 'Str0ng!Pass-seed'
+      LOCAL_URL: http://127.0.0.1:5173
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Create database tables and load seed data
+        run: |
+          for f in $(ls payflow-backend/migrations/*.up.sql | sort); do
+            psql -h localhost -U payflow_admin -d payflow_db -v ON_ERROR_STOP=1 -f "$f"
+          done
+          psql -h localhost -U payflow_admin -d payflow_db -v ON_ERROR_STOP=1 -f payflow-backend/seed/seed.sql
+
+      - name: Install and build backend
+        working-directory: payflow-backend
+        run: |
+          npm ci
+          npx prisma generate
+          npm run build
+
+      - name: Set known password for the e2e test user
+        working-directory: payflow-backend
+        run: |
+          HASH=$(node -e "require('argon2').hash(process.env.E2E_USER_PASSWORD).then(h => process.stdout.write(h))")
+          echo "UPDATE users SET password_hash = :'hash' WHERE mobile = :'mobile';" | \
+            psql -h localhost -U payflow_admin -d payflow_db -v ON_ERROR_STOP=1 -v hash="$HASH" -v mobile="$E2E_USER_ID"
+
+      - name: Start backend
+        working-directory: payflow-backend
+        env:
+          DATABASE_URL: postgresql://payflow_app:payflow_app_dev_password@localhost:5432/payflow_db?schema=public
+          JWT_ACCESS_SECRET: ci-only-secret-that-is-at-least-32-characters-long
+          CLIENT_URL: http://127.0.0.1:5173
+        run: |
+          nohup node dist/main > ../backend.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://127.0.0.1:3000/ && exit 0
+            sleep 2
+          done
+          echo "Backend did not start"; cat ../backend.log; exit 1
+
+      - name: Install, build and start frontend
+        working-directory: payflow-frontend
+        env:
+          VITE_API_BASE_URL: http://127.0.0.1:3000/api/v1
+        run: |
+          npm ci
+          npm run build
+          nohup npx vite preview --host 127.0.0.1 --port 5173 --strictPort > ../frontend.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://127.0.0.1:5173/ && exit 0
+            sleep 2
+          done
+          echo "Frontend did not start"; cat ../frontend.log; exit 1
+
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run login smoke test
+        working-directory: e2e
+        run: npx playwright test tests/smoke --project=local
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            backend.log
+            frontend.log
+          if-no-files-found: ignore
+          retention-days: 14
