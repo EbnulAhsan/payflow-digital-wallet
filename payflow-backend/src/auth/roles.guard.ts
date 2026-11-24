@@ -57,10 +57,12 @@ export class RolesGuard implements CanActivate {
     }
 
     if (!allowedRoles.includes(request.authUser.role)) {
+      // SRS 5.3: 403 FORBIDDEN_ROLE for an authenticated user whose role is
+      // not listed for the route.
       throw new ForbiddenException({
-        code: 'INSUFFICIENT_ROLE',
-        title: 'Forbidden',
-        detail: 'Insufficient role',
+        code: 'FORBIDDEN_ROLE',
+        title: 'Forbidden role',
+        detail: 'Your role is not allowed to use this endpoint',
       });
     }
 

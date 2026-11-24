@@ -5,6 +5,7 @@ import {
   RequestMethod,
 } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -12,7 +13,12 @@ import { RequestIdMiddleware } from './common/request-id.middleware';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, AuthModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    PrismaModule,
+    AuthModule,
+    AdminModule,
+  ],
   controllers: [AppController],
   providers: [AppService, RequestIdMiddleware],
 })

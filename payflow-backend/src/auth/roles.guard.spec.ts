@@ -44,11 +44,19 @@ describe('RolesGuard (SRS 1.3, NFR-SEC-03)', () => {
     );
   });
 
-  it('answers 403 when the role is not allowed', () => {
+  it('answers 403 FORBIDDEN_ROLE when the role is not allowed', () => {
     const guard = guardWith({ roles: [UserRole.ADMIN] });
-    expect(() =>
-      guard.canActivate(contextFor({ id: '1', role: UserRole.CUSTOMER })),
-    ).toThrow(ForbiddenException);
+    let thrown: unknown;
+    try {
+      guard.canActivate(contextFor({ id: '1', role: UserRole.CUSTOMER }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    expect((thrown as ForbiddenException).getResponse()).toMatchObject({
+      code: 'FORBIDDEN_ROLE',
+    });
   });
 
   it('allows a listed role', () => {

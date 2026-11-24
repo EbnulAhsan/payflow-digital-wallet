@@ -444,18 +444,24 @@ describe('AuthService.refresh (FR-AUTH-03, NFR-SEC-02)', () => {
     expect(prisma.refreshToken.create).not.toHaveBeenCalled();
   });
 
-  it('revokes every session of a deactivated user at once (FR-AUTH-03)', async () => {
-    const { service, prisma } = await setup();
-    prisma.refreshToken.findUnique.mockResolvedValue(
-      stored({ user: { ...createdUser, status: UserStatus.INACTIVE } }),
-    );
+  it.each([UserStatus.INACTIVE, UserStatus.PENDING])(
+    'answers 403 ACCOUNT_NOT_ACTIVE for a %s user and revokes every session (FR-AUTH-03)',
+    async (status) => {
+      const { service, prisma } = await setup();
+      prisma.refreshToken.findUnique.mockResolvedValue(
+        stored({ user: { ...createdUser, status } }),
+      );
 
-    await failure(service.refresh(VALID_REFRESH));
-
-    expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: 1n, revokedAt: null } }),
-    );
-  });
+      expect(await failure(service.refresh(VALID_REFRESH))).toMatchObject({
+        status: 403,
+        code: 'ACCOUNT_NOT_ACTIVE',
+      });
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 1n, revokedAt: null } }),
+      );
+      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+    },
+  );
 
   it('revokes the family when two requests race on one token', async () => {
     const { service, prisma } = await setup();

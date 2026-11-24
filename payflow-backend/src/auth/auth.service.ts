@@ -6,18 +6,15 @@ import * as argon2 from 'argon2';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './login.dto';
+import { ARGON2_OPTIONS, hashPassword } from './password';
 import { RegisterDto } from './register.dto';
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_FAILURE_LIMIT = 5;
-const ARGON2_OPTIONS: argon2.Options & { type: number } = {
-  type: argon2.argon2id,
-  memoryCost: 19 * 1024,
-  timeCost: 2,
-  parallelism: 1,
-};
+// Marks a refresh refused because the account is PENDING or INACTIVE.
+const ACCOUNT_NOT_ACTIVE = Symbol('ACCOUNT_NOT_ACTIVE');
 
 export interface LoginResponse {
   accessToken: string;
@@ -84,10 +81,7 @@ export class AuthService implements OnModuleInit {
       throw this.problem(409, 'EMAIL_TAKEN', 'Email address is already in use');
     }
 
-    const passwordHash = await argon2.hash(
-      registration.password,
-      ARGON2_OPTIONS,
-    );
+    const passwordHash = await hashPassword(registration.password);
 
     try {
       const user = await this.prisma.user.create({
@@ -328,11 +322,13 @@ export class AuthService implements OnModuleInit {
       }
 
       if (current.user.status !== UserStatus.ACTIVE) {
+        // FR-AUTH-03: a deactivated account loses every session at once.
+        // Return instead of throwing so the revocation commits.
         await transaction.refreshToken.updateMany({
           where: { userId: current.userId, revokedAt: null },
           data: { revokedAt: now },
         });
-        return null;
+        return ACCOUNT_NOT_ACTIVE;
       }
 
       const revoked = await transaction.refreshToken.updateMany({
@@ -373,6 +369,10 @@ export class AuthService implements OnModuleInit {
         refreshExpiresAt,
       };
     });
+
+    if (rotated === ACCOUNT_NOT_ACTIVE) {
+      throw this.problem(403, 'ACCOUNT_NOT_ACTIVE', 'Account not active');
+    }
 
     if (!rotated) {
       throw this.problem(401, 'INVALID_REFRESH_TOKEN', 'Invalid refresh token');
