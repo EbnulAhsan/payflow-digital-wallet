@@ -270,11 +270,16 @@ describe('FR-AUTH-03 session refresh and logout', () => {
     });
     tx.refreshToken.updateMany.mockResolvedValue({ count: 1 });
 
-    await request(app.getHttpServer())
+    const response = await request(app.getHttpServer())
       .post('/api/v1/auth/refresh')
       .set('Cookie', `refresh_token=${refreshToken}`)
-      .expect(401);
+      .expect(403);
 
+    expect(response.body).toMatchObject({
+      status: 403,
+      code: 'ACCOUNT_NOT_ACTIVE',
+    });
+    expect(response.headers['set-cookie']).toBeUndefined();
     expect(tx.refreshToken.updateMany).toHaveBeenCalledWith({
       where: { userId: activeUser.id, revokedAt: null },
       data: { revokedAt: expect.any(Date) },
@@ -345,7 +350,11 @@ describe('FR-AUTH-03 session refresh and logout', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(403);
 
-    expect(response.body.code).toBe('INSUFFICIENT_ROLE');
+    expect(response.body).toMatchObject({
+      status: 403,
+      code: 'FORBIDDEN_ROLE',
+      type: 'https://payflow.local/errors/forbidden-role',
+    });
   });
 
   it('allows an authorized role and fails closed without a role policy', async () => {

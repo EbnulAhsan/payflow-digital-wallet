@@ -116,6 +116,10 @@ describe('role-based navigation', () => {
 
   it.each<[Role, string]>([
     ['CUSTOMER', '/admin/users'],
+    // The user view / edit page is admin-only too (NFR-SEC-03).
+    ['CUSTOMER', '/admin/users/12'],
+    ['AGENT', '/admin/users/12'],
+    ['MERCHANT', '/admin/users/12'],
     ['CUSTOMER', '/agent/cash-in'],
     ['AGENT', '/cash-outs'],
     ['MERCHANT', '/send'],

@@ -41,8 +41,71 @@ model User {
   updatedAt     DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
   refreshTokens RefreshToken[]
   loginFailures LoginFailure[]
+  wallet        Wallet?
 
   @@map("users")
+}
+
+enum WalletKind {
+  USER
+  TREASURY
+
+  @@map("wallet_kind")
+}
+
+enum CashoutStatus {
+  PENDING_AUTHORIZATION
+  COMPLETED
+  REJECTED
+  CANCELLED
+  EXPIRED
+
+  @@map("co_status")
+}
+
+// Mirrors migrations/001_initial_schema.up.sql; the SQL migrations remain the
+// source of truth for constraints, indexes and grants.
+model Wallet {
+  id        BigInt     @id @default(autoincrement())
+  userId    BigInt?    @unique @map("user_id")
+  kind      WalletKind @default(USER)
+  balance   Decimal    @default(0) @db.Decimal(14, 2)
+  version   Int        @default(0)
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User?      @relation(fields: [userId], references: [id])
+
+  @@map("wallets")
+}
+
+model CashoutRequest {
+  id            BigInt        @id @default(autoincrement())
+  agentId       BigInt        @map("agent_id")
+  customerId    BigInt        @map("customer_id")
+  amount        Decimal       @db.Decimal(14, 2)
+  status        CashoutStatus @default(PENDING_AUTHORIZATION)
+  transactionId BigInt?       @unique @map("transaction_id")
+  expiresAt     DateTime      @map("expires_at") @db.Timestamptz(6)
+  decidedAt     DateTime?     @map("decided_at") @db.Timestamptz(6)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("cashout_requests")
+}
+
+// Append-only (BR-11): the application role has no UPDATE or DELETE grant.
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    BigInt?  @map("actor_id")
+  action     String   @db.VarChar(60)
+  entityType String   @map("entity_type") @db.VarChar(40)
+  entityId   BigInt   @map("entity_id")
+  beforeData Json?    @map("before_data")
+  afterData  Json?    @map("after_data")
+  ipAddress  String?  @map("ip_address") @db.Inet
+  requestId  String   @map("request_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([entityType, entityId, createdAt(sort: Desc)], map: "audit_entity")
+  @@map("audit_logs")
 }
 
 model LoginFailure {
