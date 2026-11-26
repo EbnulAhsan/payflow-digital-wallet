@@ -20,7 +20,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:auth": "jest --config ./test/jest-e2e.json --runInBand auth.e2e-spec.ts auth-rate-limit.e2e-spec.ts auth-lockout.e2e-spec.ts",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "migrate": "node scripts/migrate.mjs",
+    "seed": "node scripts/seed.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",
@@ -36,6 +38,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.4",
     "helmet": "^8.3.0",
+    "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },

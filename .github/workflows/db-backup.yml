@@ -1,0 +1,20 @@
+name: DB backup
+
+on:
+  schedule:
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    container: postgres:17
+    steps:
+      - name: Dump the production database
+        run: pg_dump "$DB" -Fc -f backup.dump
+        env:
+          DB: ${{ secrets.NEON_BACKUP_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prod-backup
+          
