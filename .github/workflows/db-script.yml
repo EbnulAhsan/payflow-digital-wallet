@@ -1,0 +1,27 @@
+name: DB script
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: File in db/scripts
+        required: true
+      target:
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target }}
+    container: postgres:17
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the script in one transaction
+        run: psql "$DB" -v ON_ERROR_STOP=1 --single-transaction -f "db/scripts/$FILE"
+        env:
+          DB: ${{ secrets.NEON_DIRECT_URL }}
+          FILE: ${{ inputs.file }}

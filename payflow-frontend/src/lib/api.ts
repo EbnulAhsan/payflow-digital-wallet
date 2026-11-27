@@ -6,7 +6,7 @@ import {
 } from '../auth/session';
 import type { AuthResponse } from '../auth/types';
 
-const baseURL = import.meta.env.VITE_API_BASE_URL;
+const baseURL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
 // SRS 5.3: base path /api/v1. The refresh token travels as an httpOnly cookie.
 export const api = axios.create({
